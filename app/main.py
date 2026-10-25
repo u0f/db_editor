@@ -13,6 +13,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from . import auth, config, db
+from . import discovery
 from .discovery import registry
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -40,7 +41,7 @@ def _db_path(request: Request) -> str:
     entry = registry.get(request.path_params["db_id"])
     if entry is None:
         raise db.DBError("Base de datos no encontrada.", 404)
-    return entry["path"]
+    return entry["fs_path"]
 
 
 async def _body(request: Request) -> dict:
@@ -111,7 +112,8 @@ async def session(request):
 async def containers(request: Request):
     force = request.query_params.get("refresh") == "1"
     items = await run_in_threadpool(registry.containers, force)
-    return {"containers": items, "error": registry.error}
+    return {"containers": items, "error": registry.error,
+            "host_root": discovery.host_root() is not None}
 
 
 @handler
@@ -119,7 +121,7 @@ async def schema(request: Request):
     path = _db_path(request)
     data = await run_in_threadpool(db.get_schema, path)
     entry = registry.get(request.path_params["db_id"])
-    data.update({"path": path, "containers": entry["containers"],
+    data.update({"path": entry["path"], "containers": entry["containers"],
                  "mount_rw": entry.get("mount_rw", True),
                  "backups": await run_in_threadpool(db.list_backups, path)})
     return data

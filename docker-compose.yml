@@ -20,11 +20,12 @@ services:
       # EXCLUDE_CONTAINERS: "contenedor1,contenedor2"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Volúmenes con nombre de Docker, en la MISMA ruta que en el host.
-      - /var/lib/docker/volumes:/var/lib/docker/volumes
-      # Carpeta donde están tus proyectos (bind mounts ./data), en la MISMA ruta que en el host.
-      # Cámbiala si tus proyectos no están en /DATA (p. ej. /home/user/projects:/home/user/projects).
-      - /DATA:/DATA
+      # Raíz del host: así el visor ve CUALQUIER montaje de cualquier contenedor
+      # (bind mounts de tus proyectos y volúmenes con nombre) sin listarlos uno a uno.
+      # Las rutas se traducen solas: /home/user/projects/x -> /host/home/user/projects/x.
+      # Lectura/escritura porque hace falta para editar; el socket de Docker ya da
+      # un acceso equivalente, así que no añade privilegios reales.
+      - /:/host:rslave
       # Copias de seguridad (solo se escriben cuando las pides).
       - ./backups:/backups
     read_only: true

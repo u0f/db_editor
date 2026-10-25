@@ -80,6 +80,29 @@ def _is_self(container: dict) -> bool:
     return bool(host) and container.get("Id", "").startswith(host)
 
 
+def host_root() -> str | None:
+    root = config.HOST_ROOT
+    if root and os.path.isdir(root) and os.listdir(root):
+        return root
+    return None
+
+
+def resolve(source: str) -> str | None:
+    """Ruta del host -> ruta accesible dentro del visor (o None si no se ve)."""
+    root = host_root()
+    path = os.path.join(root, source.lstrip("/")) if root else source
+    return path if os.path.exists(path) else None
+
+
+def _maybe_db_mount(source: str, fs_path: str | None) -> bool:
+    """¿Puede este montaje contener una base de datos? (carpeta o archivo .db/.sqlite)."""
+    if fs_path is not None:
+        return os.path.isdir(fs_path) or source.lower().endswith(DB_EXTENSIONS)
+    name = os.path.basename(source.rstrip("/"))
+    ext = os.path.splitext(name)[1].lower()
+    return not ext or ext in DB_EXTENSIONS
+
+
 def _container_path(path: str, source: str, destination: str) -> str:
     rel = os.path.relpath(path, source)
     return destination if rel == "." else os.path.join(destination, rel)
@@ -123,8 +146,14 @@ class Registry:
 def discover() -> tuple[list[dict], dict[str, dict]]:
     containers = []
     dbs: dict[str, dict] = {}
-    backup_dir = os.path.realpath(config.BACKUP_DIR)
-    for c in docker_api.running_containers():
+    running = docker_api.running_containers()
+    # las copias de seguridad no deben aparecer como bases de datos (tampoco vistas por /host)
+    excluded = {os.path.realpath(config.BACKUP_DIR)}
+    for c in filter(_is_self, running):
+        for m in c.get("Mounts") or []:
+            if m.get("Destination") == config.BACKUP_DIR and (r := resolve(m.get("Source", ""))):
+                excluded.add(os.path.realpath(r))
+    for c in running:
         name = (c.get("Names") or ["?"])[0].lstrip("/")
         if name in config.EXCLUDE_CONTAINERS or _is_self(c):
             continue
@@ -132,25 +161,33 @@ def discover() -> tuple[list[dict], dict[str, dict]]:
         for m in c.get("Mounts") or []:
             source = m.get("Source") or ""
             dest = m.get("Destination") or ""
-            if not source or source.rstrip("/") in SKIP_SOURCES or source.endswith(".sock"):
+            if (not source or source.rstrip("/") in SKIP_SOURCES or source.endswith(".sock")
+                    or source.startswith(("/etc/", "/proc/", "/sys/", "/dev/"))):
                 continue
-            accessible = os.path.exists(source)
+            fs_source = resolve(source)
+            if not _maybe_db_mount(source, fs_source):
+                continue  # archivos sueltos (config, cookies, /etc/localtime...)
             mounts.append({"type": m.get("Type"), "name": m.get("Name"), "source": source,
                            "destination": dest, "rw": m.get("RW", True),
-                           "accessible": accessible})
-            if not accessible:
+                           "accessible": fs_source is not None})
+            if fs_source is None:
                 continue
-            for path in scan_source(source):
-                if os.path.realpath(path).startswith(backup_dir + os.sep):
+            for fs_path in scan_source(fs_source):
+                real = os.path.realpath(fs_path)
+                if any(real.startswith(x + os.sep) for x in excluded):
                     continue
+                rel = os.path.relpath(fs_path, fs_source)
+                path = source if rel == "." else os.path.join(source, rel)  # ruta en el host
                 ident = db_id(path)
                 try:
-                    info = _file_info(path)
+                    info = _file_info(fs_path)
                 except OSError:
                     continue
-                entry = dbs.setdefault(ident, {"id": ident, "path": path, "containers": [],
+                entry = dbs.setdefault(ident, {"id": ident, "path": path, "fs_path": fs_path,
+                                               "containers": [],
                                                "mount_rw": m.get("RW", True), **info})
-                entry["containers"].append(name)
+                if name not in entry["containers"]:
+                    entry["containers"].append(name)
                 databases.append({"id": ident, "path": path, "name": os.path.basename(path),
                                   "container_path": _container_path(path, source, dest),
                                   **info})
@@ -169,7 +206,7 @@ def _main() -> None:
     for c in containers:
         print(f"{c['name']}  ({c['image']})")
         for m in c["mounts"]:
-            flag = "" if m["accessible"] else "   [NO ACCESIBLE: monta esta ruta en el visor]"
+            flag = "" if m["accessible"] else "   [NO ACCESIBLE desde el visor]"
             print(f"   montaje {m['source']} -> {m['destination']}{flag}")
         for d in c["databases"]:
             wal = f", wal {d['wal_size']} B" if d["wal_size"] is not None else ""

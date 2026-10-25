@@ -20,6 +20,9 @@ PASSWORD = os.environ.get("DB_EDITOR_PASSWORD", "")
 PORT = _int("DB_EDITOR_PORT", 8790)
 
 DOCKER_SOCKET = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
+# Raíz del host montada dentro del visor (- /:/host). Si existe, todas las rutas de los
+# montajes se leen a través de ella y no hace falta montar cada carpeta por separado.
+HOST_ROOT = os.environ.get("HOST_ROOT", "/host")
 
 # Descubrimiento
 SCAN_MAX_DEPTH = _int("SCAN_MAX_DEPTH", 4)

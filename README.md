@@ -18,15 +18,19 @@ ligero, para cualquier host con Docker (también Raspberry Pi y CasaOS).
 
 1. Clona el repo en el host y edita `docker-compose.yml`:
    - `DB_EDITOR_PASSWORD`: **obligatoria** (sin ella el contenedor no arranca).
-   - La línea `- /DATA:/DATA`: pon la carpeta donde están tus proyectos, **en la misma ruta
-     que en el host** (p. ej. `- /home/user/projects:/home/user/projects`). Puedes añadir varias.
+   - No hace falta listar las carpetas de tus proyectos: el compose monta la raíz del host en
+     `/host` (`- /:/host:rslave`) y el visor traduce solo las rutas de cada montaje
+     (`/home/user/projects/x/data` → `/host/home/user/projects/x/data`), incluidos los
+     volúmenes con nombre de `/var/lib/docker/volumes`.
 2. `docker compose up -d --build`
 3. Abre `http://<ip-del-host>:8790` o el icono en CasaOS (bloque `x-casaos`).
 
 Puerto: **8790**.
 
-Si un montaje de algún contenedor no está visible dentro del visor, la barra lateral lo marca
-con ⚠ y la ruta que falta montar.
+Los contenedores sin bases de datos se agrupan al final, en «Sin bases de datos». Los montajes
+que no pueden contener una base de datos (archivos sueltos como cookies, configuración o
+`/etc/localtime`) no se tienen en cuenta. Si una carpeta montada no se ve desde el visor, aparece
+con ⚠.
 
 Para construir la imagen para ambas arquitecturas desde otro equipo:
 
@@ -46,6 +50,7 @@ docker buildx build --platform linux/arm64,linux/amd64 -t db-editor:latest .
 | `BACKUP_DIR` | `/backups` | Dónde se guardan las copias. |
 | `BACKUP_KEEP` | `5` | Copias que se conservan por base de datos. |
 | `BUSY_TIMEOUT_MS` | `10000` | `PRAGMA busy_timeout` al escribir mientras el bot escribe. |
+| `HOST_ROOT` | `/host` | Dónde está montada la raíz del host. Si no existe, se usan las rutas tal cual (montándolas en la misma ruta). |
 | `EXCLUDE_CONTAINERS` | — | Nombres separados por comas que no se escanean. |
 | `SCAN_MAX_DEPTH` | `4` | Profundidad máxima al recorrer cada montaje. |
 | `SESSION_HOURS` | `12` | Duración de la sesión. |

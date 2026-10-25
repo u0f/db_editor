@@ -148,7 +148,7 @@ async function start() {
 async function loadContainers(force) {
   try {
     const r = await api("GET", "/api/containers" + (force ? "?refresh=1" : ""));
-    S.containers = r.containers;
+    S.containers = r.containers; S.hostRoot = r.host_root;
     if (r.error) toast(r.error, "bad");
     if (!S.openCt.size) S.containers.filter((c) => c.databases.length).forEach((c) => S.openCt.add(c.name));
     renderSidebar();
@@ -156,30 +156,47 @@ async function loadContainers(force) {
   } catch (err) { toast(err.message, "bad"); }
 }
 
+const hiddenMounts = (c) => c.mounts.filter((m) => !m.accessible);
+const mountWarnings = (c) => hiddenMounts(c).map((m) =>
+  el("div", { class: "mount-warn", title: `En el contenedor: ${m.destination}` }, `⚠ No accesible: ${m.source}`));
+
+function renderContainer(c) {
+  const open = S.openCt.has(c.name);
+  const hidden = hiddenMounts(c);
+  const head = el("div", { class: "ct-head", onclick: () => { open ? S.openCt.delete(c.name) : S.openCt.add(c.name); renderSidebar(); } },
+    el("span", {}, open ? "▾" : "▸"), el("span", { class: "ct-name", title: c.image }, c.name),
+    el("span", { class: "badge info" }, c.databases.length),
+    hidden.length ? el("span", { class: "badge warn", title: "Montajes no visibles desde el visor" }, "!") : null);
+  const body = open ? el("div", { class: "ct-body" },
+    c.databases.map((d) => [
+      el("div", { class: "db-item" + (d.id === S.dbId ? " active" : ""), title: `${d.path}\nEn el contenedor: ${d.container_path}`, onclick: () => openDb(d, c.name) },
+        "🗄", el("span", { class: "n" }, d.name), el("span", { class: "muted" }, fmtSize(d.size))),
+      d.id === S.dbId && S.schema ? S.schema.tables.map((t) =>
+        el("div", { class: "tbl-item" + (t.name === S.table ? " active" : ""), onclick: () => openTable(t.name) },
+          el("span", { class: "n" }, t.name),
+          t.type !== "table" ? el("span", { class: "badge" }, t.type) : !t.editable ? el("span", { class: "badge", title: t.readonly_reason }, "ro") : null)) : null,
+    ]),
+    mountWarnings(c)) : null;
+  return el("div", { class: "ct" }, head, body);
+}
+
 function renderSidebar() {
   const side = $("sidebar");
   if (!S.containers.length) { side.replaceChildren(el("div", { class: "muted pad" }, "No hay contenedores en marcha.")); return; }
-  side.replaceChildren(...S.containers.map((c) => {
-    const open = S.openCt.has(c.name);
-    const hidden = c.mounts.filter((m) => !m.accessible);
-    const head = el("div", { class: "ct-head", onclick: () => { open ? S.openCt.delete(c.name) : S.openCt.add(c.name); renderSidebar(); } },
-      el("span", {}, open ? "▾" : "▸"), el("span", { class: "ct-name", title: c.image }, c.name),
-      c.databases.length ? el("span", { class: "badge info" }, c.databases.length) : null,
-      hidden.length ? el("span", { class: "badge warn", title: "Montajes no visibles desde el visor" }, "!") : null);
-    const body = open ? el("div", { class: "ct-body" },
-      c.databases.map((d) => [
-        el("div", { class: "db-item" + (d.id === S.dbId ? " active" : ""), title: `${d.path}\nEn el contenedor: ${d.container_path}`, onclick: () => openDb(d, c.name) },
-          "🗄", el("span", { class: "n" }, d.name), el("span", { class: "muted" }, fmtSize(d.size))),
-        d.id === S.dbId && S.schema ? S.schema.tables.map((t) =>
-          el("div", { class: "tbl-item" + (t.name === S.table ? " active" : ""), onclick: () => openTable(t.name) },
-            el("span", { class: "n" }, t.name),
-            t.type !== "table" ? el("span", { class: "badge" }, t.type) : !t.editable ? el("span", { class: "badge", title: t.readonly_reason }, "ro") : null)) : null,
-      ]),
-      !c.databases.length ? el("div", { class: "mount-warn muted" }, "Sin bases de datos SQLite") : null,
-      hidden.map((m) => el("div", { class: "mount-warn" }, `⚠ No accesible: ${m.source} (móntalo en el visor en la misma ruta)`)),
-    ) : null;
-    return el("div", { class: "ct" + (c.databases.length ? "" : " nodb") }, head, body);
-  }));
+  const withDb = S.containers.filter((c) => c.databases.length);
+  const noDb = S.containers.filter((c) => !c.databases.length);
+  const anyHidden = S.containers.some((c) => hiddenMounts(c).length);
+  const group = noDb.length ? el("div", { class: "group" },
+    el("div", { class: "group-head", onclick: () => { S.showNoDb = !S.showNoDb; renderSidebar(); } },
+      el("span", {}, S.showNoDb ? "▾" : "▸"), el("span", { class: "ct-name" }, "Sin bases de datos"),
+      el("span", { class: "badge" }, noDb.length)),
+    S.showNoDb ? noDb.map((c) => el("div", { class: "nodb-item" },
+      el("div", { class: "n", title: c.image }, c.name), mountWarnings(c))) : null) : null;
+  side.replaceChildren(...[
+    anyHidden && !S.hostRoot ? el("div", { class: "hint-box" }, "Hay montajes que el visor no ve. Monta la raíz del host con ",
+      el("code", {}, "- /:/host:rslave"), " (ver docker-compose.yml) y pulsa ⟳ Buscar.") : null,
+    withDb.length ? withDb.map((c) => renderContainer(c)) : el("div", { class: "muted pad" }, "Ningún contenedor usa SQLite."),
+    group].flat().filter(Boolean));
 }
 
 // ------------------------------------------------------------------ base de datos / tabla

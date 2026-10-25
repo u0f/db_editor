@@ -141,3 +141,29 @@ def test_discovery_header_check(tmp_path):
     real.parent.mkdir()
     sqlite3.connect(real).execute("CREATE TABLE t (x)").connection.close()
     assert discovery.scan_source(str(tmp_path)) == [str(real)]
+
+
+def test_host_root_translation(tmp_path, monkeypatch):
+    from app import discovery
+    root = tmp_path / "host"
+    data = root / "home" / "user" / "projects" / "app" / "data"
+    data.mkdir(parents=True)
+    sqlite3.connect(data / "app.db").execute("CREATE TABLE t (x)").connection.close()
+    (root / "etc").mkdir()
+    (root / "etc" / "localtime").write_text("tz")
+    monkeypatch.setattr(config, "HOST_ROOT", str(root))
+    monkeypatch.setattr(discovery.docker_api, "running_containers", lambda: [{
+        "Id": "x", "Names": ["/my-app"], "Image": "app", "Mounts": [
+            {"Type": "bind", "Source": "/home/user/projects/app/data", "Destination": "/data"},
+            {"Type": "bind", "Source": "/etc/localtime", "Destination": "/etc/localtime"},
+            {"Type": "bind", "Source": "/home/user/projects/x/cookies.txt", "Destination": "/c"},
+            {"Type": "bind", "Source": "/home/user/projects/other/data", "Destination": "/data"},
+        ]}])
+    containers, dbs = discovery.discover()
+    c = containers[0]
+    assert [d["path"] for d in c["databases"]] == ["/home/user/projects/app/data/app.db"]
+    assert c["databases"][0]["container_path"] == "/data/app.db"
+    entry = dbs[c["databases"][0]["id"]]
+    assert entry["fs_path"] == str(data / "app.db")
+    # solo se avisa de la carpeta inexistente, no de archivos sueltos
+    assert [m["source"] for m in c["mounts"] if not m["accessible"]] == ["/home/user/projects/other/data"]

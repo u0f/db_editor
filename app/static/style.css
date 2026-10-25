@@ -55,6 +55,14 @@ main { overflow: auto; display: flex; flex-direction: column; min-width: 0; }
 .tbl-item { padding-left: 40px; font-size: 13px; }
 .tbl-item.active { background: var(--panel2); color: var(--accent); }
 .tbl-item .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-head { padding: 9px 12px; cursor: pointer; display: flex; gap: 6px; align-items: center;
+  color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.group-head:hover { background: var(--panel2); }
+.nodb-item { padding: 4px 12px 4px 24px; color: var(--muted); }
+.nodb-item .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nodb-item .mount-warn { padding-left: 8px; }
+.hint-box { margin: 10px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: 6px;
+  color: var(--warn); font-size: 12px; }
 .mount-warn { padding: 3px 12px 3px 24px; font-size: 12px; color: var(--warn); word-break: break-all; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px;
