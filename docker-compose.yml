@@ -1,0 +1,65 @@
+name: db-editor
+
+services:
+  db-editor:
+    build: .
+    image: db-editor:latest
+    container_name: db-editor
+    restart: unless-stopped
+    ports:
+      - "8790:8790"
+    environment:
+      # Obligatoria: la interfaz puede escribir en todas las bases de datos.
+      DB_EDITOR_PASSWORD: "cambia-esta-contraseña"
+      TZ: ${TZ:-UTC}
+      # Opcionales (valores por defecto):
+      # READ_ONLY: "false"              # true = nadie puede escribir
+      # ALLOW_SCHEMA_CHANGES: "false"   # true = permite DDL en la consola (nunca con Alembic)
+      # ENABLE_SQL_CONSOLE: "true"
+      # BACKUP_KEEP: "5"                # copias por base de datos
+      # EXCLUDE_CONTAINERS: "contenedor1,contenedor2"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Volúmenes con nombre de Docker, en la MISMA ruta que en el host.
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      # Carpeta donde están tus proyectos (bind mounts ./data), en la MISMA ruta que en el host.
+      # Cámbiala si tus proyectos no están en /DATA (p. ej. /home/user/projects:/home/user/projects).
+      - /DATA:/DATA
+      # Copias de seguridad (solo se escriben cuando las pides).
+      - ./backups:/backups
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 192m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: db-editor
+  author: u0f
+  developer: u0f
+  category: Developer
+  title:
+    en_us: DB Editor
+    es_es: DB Editor
+  tagline:
+    en_us: Browse and edit the SQLite databases of your running containers
+    es_es: Ver y editar las bases de datos SQLite de tus contenedores
+  description:
+    en_us: Discovers running Docker containers, finds their SQLite databases and lets you browse and edit them.
+    es_es: Descubre los contenedores en marcha, encuentra sus bases de datos SQLite y permite verlas y editarlas.
+  icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/sqlitebrowser.png
+  index: /
+  port_map: "8790"
+  scheme: http
