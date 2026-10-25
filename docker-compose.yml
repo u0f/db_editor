@@ -10,7 +10,8 @@ services:
       - "8790:8790"
     environment:
       # Obligatoria: la interfaz puede escribir en todas las bases de datos.
-      DB_EDITOR_PASSWORD: "cambia-esta-contraseña"
+      # Se lee del archivo .env junto a este compose (no se sube a git); ver .env.example.
+      DB_EDITOR_PASSWORD: ${DB_EDITOR_PASSWORD:?Define DB_EDITOR_PASSWORD en el archivo .env}
       TZ: ${TZ:-UTC}
       # Opcionales (valores por defecto):
       # READ_ONLY: "false"              # true = nadie puede escribir

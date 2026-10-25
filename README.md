@@ -16,8 +16,14 @@ ligero, para cualquier host con Docker (también Raspberry Pi y CasaOS).
 
 ## Despliegue
 
-1. Clona el repo en el host y edita `docker-compose.yml`:
-   - `DB_EDITOR_PASSWORD`: **obligatoria** (sin ella el contenedor no arranca).
+1. Clona el repo en el host y crea el archivo `.env` con la contraseña (**obligatoria**):
+   ```sh
+   cp .env.example .env
+   nano .env        # DB_EDITOR_PASSWORD=tu-contraseña
+   chmod 600 .env
+   ```
+   `.env` está en `.gitignore`, así que la contraseña nunca se sube al repo. Sin ella,
+   `docker compose` se niega a arrancar.
    - No hace falta listar las carpetas de tus proyectos: el compose monta la raíz del host en
      `/host` (`- /:/host:rslave`) y el visor traduce solo las rutas de cada montaje
      (`/home/user/projects/x/data` → `/host/home/user/projects/x/data`), incluidos los
