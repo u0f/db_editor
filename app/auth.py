@@ -1,4 +1,4 @@
-"""Autenticación por contraseña (variable de entorno) con cookie firmada en memoria."""
+"""Password authentication (environment variable) with an in-memory signed cookie."""
 import hashlib
 import hmac
 import os
@@ -7,7 +7,7 @@ import time
 from . import config
 
 COOKIE = "dbe_session"
-# Secreto aleatorio por arranque: reiniciar el contenedor cierra todas las sesiones.
+# Random secret per start: restarting the container ends all sessions.
 _SECRET = os.urandom(32)
 _failures: dict[str, list[float]] = {}
 MAX_FAILURES = 10

@@ -9,25 +9,25 @@ services:
     ports:
       - "8790:8790"
     environment:
-      # Obligatoria: la interfaz puede escribir en todas las bases de datos.
-      # Se lee del archivo .env junto a este compose (no se sube a git); ver .env.example.
-      DB_EDITOR_PASSWORD: ${DB_EDITOR_PASSWORD:?Define DB_EDITOR_PASSWORD en el archivo .env}
+      # Required: the UI can write to every database.
+      # Read from the .env file next to this compose file (not committed); see .env.example.
+      DB_EDITOR_PASSWORD: ${DB_EDITOR_PASSWORD:?Set DB_EDITOR_PASSWORD in the .env file}
       TZ: ${TZ:-UTC}
-      # Opcionales (valores por defecto):
-      # READ_ONLY: "false"              # true = nadie puede escribir
-      # ALLOW_SCHEMA_CHANGES: "false"   # true = permite DDL en la consola (nunca con Alembic)
+      # Optional (default values):
+      # READ_ONLY: "false"              # true = nobody can write
+      # ALLOW_SCHEMA_CHANGES: "false"   # true = allow DDL in the console (never with Alembic)
       # ENABLE_SQL_CONSOLE: "true"
-      # BACKUP_KEEP: "5"                # copias por base de datos
-      # EXCLUDE_CONTAINERS: "contenedor1,contenedor2"
+      # BACKUP_KEEP: "5"                # backups kept per database
+      # EXCLUDE_CONTAINERS: "container1,container2"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Raíz del host: así el visor ve CUALQUIER montaje de cualquier contenedor
-      # (bind mounts de tus proyectos y volúmenes con nombre) sin listarlos uno a uno.
-      # Las rutas se traducen solas: /home/user/projects/x -> /host/home/user/projects/x.
-      # Lectura/escritura porque hace falta para editar; el socket de Docker ya da
-      # un acceso equivalente, así que no añade privilegios reales.
+      # Host root: lets the viewer see ANY mount of any container
+      # (your project bind mounts and named volumes) without listing them one by one.
+      # Paths are translated automatically: /home/user/projects/x -> /host/home/user/projects/x.
+      # Read/write because editing needs it; the Docker socket already grants
+      # equivalent access, so it adds no real privileges.
       - /:/host:rslave
-      # Copias de seguridad (solo se escriben cuando las pides).
+      # Backups (only written when you ask for one).
       - ./backups:/backups
     read_only: true
     tmpfs:

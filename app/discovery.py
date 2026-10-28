@@ -1,6 +1,6 @@
-"""Descubre las bases de datos SQLite de los contenedores en marcha.
+"""Discover the SQLite databases of running containers.
 
-Uso como script:  python -m app.discovery
+Usage as a script:  python -m app.discovery
 """
 import hashlib
 import os
@@ -51,7 +51,7 @@ def _scan_dir(root: str) -> list[str]:
 
 
 def scan_source(source: str) -> list[str]:
-    """Busca archivos SQLite válidos en una ruta (archivo o carpeta)."""
+    """Find valid SQLite files in a path (file or folder)."""
     try:
         st = os.stat(source)
     except OSError:
@@ -88,14 +88,14 @@ def host_root() -> str | None:
 
 
 def resolve(source: str) -> str | None:
-    """Ruta del host -> ruta accesible dentro del visor (o None si no se ve)."""
+    """Host path -> path reachable inside the viewer (or None if not visible)."""
     root = host_root()
     path = os.path.join(root, source.lstrip("/")) if root else source
     return path if os.path.exists(path) else None
 
 
 def _maybe_db_mount(source: str, fs_path: str | None) -> bool:
-    """¿Puede este montaje contener una base de datos? (carpeta o archivo .db/.sqlite)."""
+    """Can this mount hold a database? (folder or .db/.sqlite file)."""
     if fs_path is not None:
         return os.path.isdir(fs_path) or source.lower().endswith(DB_EXTENSIONS)
     name = os.path.basename(source.rstrip("/"))
@@ -109,7 +109,7 @@ def _container_path(path: str, source: str, destination: str) -> str:
 
 
 class Registry:
-    """Resultado del descubrimiento cacheado en memoria (nada se escribe a disco)."""
+    """Discovery result cached in memory (nothing is written to disk)."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -137,7 +137,7 @@ class Registry:
     def get(self, ident: str) -> dict | None:
         self.refresh()
         db = self._dbs.get(ident)
-        if db is None:  # puede ser un contenedor recién arrancado
+        if db is None:  # may be a freshly started container
             self.refresh(force=True)
             db = self._dbs.get(ident)
         return db
@@ -147,7 +147,7 @@ def discover() -> tuple[list[dict], dict[str, dict]]:
     containers = []
     dbs: dict[str, dict] = {}
     running = docker_api.running_containers()
-    # las copias de seguridad no deben aparecer como bases de datos (tampoco vistas por /host)
+    # backups must not show up as databases (not even when seen through /host)
     excluded = {os.path.realpath(config.BACKUP_DIR)}
     for c in filter(_is_self, running):
         for m in c.get("Mounts") or []:
@@ -166,7 +166,7 @@ def discover() -> tuple[list[dict], dict[str, dict]]:
                 continue
             fs_source = resolve(source)
             if not _maybe_db_mount(source, fs_source):
-                continue  # archivos sueltos (config, cookies, /etc/localtime...)
+                continue  # loose files (config, cookies, /etc/localtime...)
             mounts.append({"type": m.get("Type"), "name": m.get("Name"), "source": source,
                            "destination": dest, "rw": m.get("RW", True),
                            "accessible": fs_source is not None})
@@ -177,7 +177,7 @@ def discover() -> tuple[list[dict], dict[str, dict]]:
                 if any(real.startswith(x + os.sep) for x in excluded):
                     continue
                 rel = os.path.relpath(fs_path, fs_source)
-                path = source if rel == "." else os.path.join(source, rel)  # ruta en el host
+                path = source if rel == "." else os.path.join(source, rel)  # path on the host
                 ident = db_id(path)
                 try:
                     info = _file_info(fs_path)
@@ -206,14 +206,14 @@ def _main() -> None:
     for c in containers:
         print(f"{c['name']}  ({c['image']})")
         for m in c["mounts"]:
-            flag = "" if m["accessible"] else "   [NO ACCESIBLE desde el visor]"
-            print(f"   montaje {m['source']} -> {m['destination']}{flag}")
+            flag = "" if m["accessible"] else "   [NOT ACCESSIBLE from the viewer]"
+            print(f"   mount {m['source']} -> {m['destination']}{flag}")
         for d in c["databases"]:
             wal = f", wal {d['wal_size']} B" if d["wal_size"] is not None else ""
             print(f"   * {d['path']}  ({d['size']} B{wal}, uid {d['uid']})  "
-                  f"[en el contenedor: {d['container_path']}]")
+                  f"[in the container: {d['container_path']}]")
         if not c["databases"]:
-            print("   (sin bases de datos SQLite)")
+            print("   (no SQLite databases)")
 
 
 if __name__ == "__main__":

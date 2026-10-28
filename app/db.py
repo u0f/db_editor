@@ -1,12 +1,12 @@
-"""Acceso genérico a SQLite: esquema, lectura paginada, edición, backups y consola SQL.
+"""Generic SQLite access: schema, paged reads, editing, backups and SQL console.
 
-Reglas que se cumplen siempre:
-  * nunca se abre con immutable=1 (se perderían los datos que aún están en el -wal);
-  * lecturas con ``file:<ruta>?mode=ro``;
-  * escrituras en transacciones cortas (BEGIN IMMEDIATE ... COMMIT) y parametrizadas;
-  * busy_timeout alto, porque otra aplicación puede tener el único hueco de escritor de WAL;
-  * jamás VACUUM ni cambios de journal_mode;
-  * tras escribir, -wal/-shm conservan el uid/gid del archivo principal.
+Rules that always hold:
+  * never opened with immutable=1 (data still in the -wal would be lost);
+  * reads use ``file:<path>?mode=ro``;
+  * writes run in short, parametrized transactions (BEGIN IMMEDIATE ... COMMIT);
+  * high busy_timeout, because another application may hold the single WAL writer slot;
+  * never VACUUM or change journal_mode;
+  * after writing, -wal/-shm keep the uid/gid of the main file.
 """
 import base64
 import math
@@ -22,9 +22,11 @@ from . import config
 
 
 class DBError(Exception):
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
+    def __init__(self, message: str, status: int = 400, **params):
+        super().__init__(message.format(**params) if params else message)
         self.status = status
+        self.key = message  # English template, used as the translation key by the UI
+        self.params = params
 
 
 MAX_SAFE_INT = 2**53 - 1
@@ -33,12 +35,12 @@ ROWID_ALIASES = ("rowid", "_rowid_", "oid")
 
 
 def qi(name: str) -> str:
-    """Cita un identificador SQL."""
+    """Quote an SQL identifier."""
     return '"' + name.replace('"', '""') + '"'
 
 
 def affinity(decl_type: str | None) -> str:
-    """Afinidad de columna según las reglas de SQLite (sección 3.1 de datatype3)."""
+    """Column affinity per SQLite rules (section 3.1 of datatype3)."""
     t = (decl_type or "").upper()
     if "INT" in t:
         return "INTEGER"
@@ -51,7 +53,7 @@ def affinity(decl_type: str | None) -> str:
     return "NUMERIC"
 
 
-# --------------------------------------------------------------------------- conexión
+# --------------------------------------------------------------------------- connection
 
 def _deadline_handler(seconds: float):
     limit = time.monotonic() + seconds
@@ -59,7 +61,7 @@ def _deadline_handler(seconds: float):
 
 
 def fix_ownership(path: str) -> None:
-    """Asegura que -wal/-shm/-journal tengan el mismo dueño que la base de datos."""
+    """Make sure -wal/-shm/-journal have the same owner as the database."""
     try:
         st = os.stat(path)
     except OSError:
@@ -81,7 +83,7 @@ def connect(path: str, write: bool = False):
         conn = sqlite3.connect(f"file:{quote(path)}?mode={mode}", uri=True,
                                isolation_level=None, timeout=config.BUSY_TIMEOUT_MS / 1000)
     except sqlite3.Error as exc:
-        raise DBError(f"No se puede abrir la base de datos: {exc}", 500) from exc
+        raise DBError("Cannot open the database: {error}", 500, error=str(exc)) from exc
     try:
         conn.execute(f"PRAGMA busy_timeout = {int(config.BUSY_TIMEOUT_MS)}")
         deadline = config.WRITE_DEADLINE_S if write else config.READ_DEADLINE_S
@@ -98,25 +100,25 @@ def connect(path: str, write: bool = False):
 
 
 def _run(fn):
-    """Traduce errores de SQLite a DBError con un mensaje entendible."""
+    """Translate SQLite errors into DBError with a readable message."""
     try:
         return fn()
     except sqlite3.OperationalError as exc:
         msg = str(exc)
         if "interrupted" in msg:
-            raise DBError("La consulta tardó demasiado y se canceló.", 408) from exc
+            raise DBError("The query took too long and was cancelled.", 408) from exc
         if "locked" in msg or "busy" in msg:
-            raise DBError("La base de datos está ocupada (otra aplicación está escribiendo). "
-                          "Inténtalo de nuevo.", 409) from exc
+            raise DBError("The database is busy (another application is writing). "
+                          "Try again.", 409) from exc
         raise DBError(msg) from exc
     except sqlite3.Error as exc:
         raise DBError(str(exc)) from exc
 
 
-# --------------------------------------------------------------------------- valores
+# --------------------------------------------------------------------------- values
 
 def encode_value(v, full: bool = False):
-    """Valor SQLite -> JSON seguro para el navegador."""
+    """SQLite value -> JSON that is safe for the browser."""
     if isinstance(v, bytes):
         data = v if full else v[:BLOB_PREVIEW]
         return {"$blob": base64.b64encode(data).decode(), "size": len(v),
@@ -129,7 +131,7 @@ def encode_value(v, full: bool = False):
 
 
 def decode_value(v):
-    """JSON del navegador -> valor para enlazar en la consulta."""
+    """Browser JSON -> value to bind in the query."""
     if isinstance(v, dict):
         if "$int" in v:
             return int(v["$int"])
@@ -137,18 +139,18 @@ def decode_value(v):
             return float(v["$real"])
         if "$blob" in v:
             if v.get("truncated"):
-                raise DBError("No se puede usar un BLOB truncado.")
+                raise DBError("A truncated BLOB cannot be used.")
             return base64.b64decode(v["$blob"])
-        raise DBError("Valor no válido.")
+        raise DBError("Invalid value.")
     if isinstance(v, (list,)):
-        raise DBError("Valor no válido (usa texto para JSON).")
+        raise DBError("Invalid value (use text for JSON).")
     return v
 
 
-# --------------------------------------------------------------------------- esquema
+# --------------------------------------------------------------------------- schema
 
 def _table_list(conn) -> dict[str, dict]:
-    """Tipo de cada objeto usando PRAGMA table_list (3.37+) si está disponible."""
+    """Type of each object using PRAGMA table_list (3.37+) when available."""
     try:
         rows = conn.execute("PRAGMA main.table_list").fetchall()
     except sqlite3.Error:
@@ -166,7 +168,7 @@ def _table_meta(conn, name: str, objects: dict | None = None, tlist: dict | None
         row = conn.execute("SELECT type, sql FROM sqlite_master WHERE name=? AND "
                            "type IN ('table','view')", (name,)).fetchone()
         if row is None:
-            raise DBError(f"La tabla «{name}» no existe.", 404)
+            raise DBError("Table «{name}» does not exist.", 404, name=name)
         obj_type, sql = row
     else:
         obj_type, sql = objects[name]
@@ -187,7 +189,7 @@ def _table_meta(conn, name: str, objects: dict | None = None, tlist: dict | None
                 f"PRAGMA table_info({qi(name)})"):
             columns.append({"name": cname, "type": ctype or "", "affinity": affinity(ctype),
                             "notnull": bool(notnull), "default": default, "pk": pk})
-    except sqlite3.Error as exc:  # p. ej. tabla virtual con módulo no disponible
+    except sqlite3.Error as exc:  # e.g. virtual table whose module is unavailable
         error = str(exc)
 
     pk_cols = [c["name"] for c in sorted((c for c in columns if c["pk"]), key=lambda c: c["pk"])]
@@ -203,17 +205,17 @@ def _table_meta(conn, name: str, objects: dict | None = None, tlist: dict | None
 
     readonly_reason = None
     if config.READ_ONLY:
-        readonly_reason = "El visor está en modo solo lectura (READ_ONLY)."
+        readonly_reason = "The viewer is in read-only mode (READ_ONLY)."
     elif kind == "view":
-        readonly_reason = "Es una vista."
+        readonly_reason = "It is a view."
     elif kind in ("virtual", "shadow"):
-        readonly_reason = "Tabla virtual o interna de una tabla virtual."
+        readonly_reason = "Virtual table or internal table of a virtual table."
     elif name.startswith("sqlite_"):
-        readonly_reason = "Tabla interna de SQLite."
+        readonly_reason = "Internal SQLite table."
     elif name == "alembic_version":
-        readonly_reason = "Tabla de control de migraciones de Alembic."
+        readonly_reason = "Alembic migration control table."
     elif key is None or error:
-        readonly_reason = "No hay forma fiable de identificar las filas."
+        readonly_reason = "There is no reliable way to identify the rows."
 
     return {"name": name, "type": kind, "sql": sql, "columns": columns, "key": key,
             "without_rowid": without_rowid, "editable": readonly_reason is None,
@@ -262,7 +264,7 @@ def schema_locked(alembic: bool) -> bool:
     return alembic or not config.ALLOW_SCHEMA_CHANGES
 
 
-# --------------------------------------------------------------------------- lectura
+# --------------------------------------------------------------------------- reading
 
 def read_rows(path: str, table: str, page: int = 1, size: int = 50, sort: str | None = None,
               desc: bool = False, q: str | None = None, col: str | None = None) -> dict:
@@ -282,7 +284,7 @@ def read_rows(path: str, table: str, page: int = 1, size: int = 50, sort: str | 
             if q:
                 targets = [col] if col else names
                 if col and col not in names:
-                    raise DBError("Columna de filtro desconocida.")
+                    raise DBError("Unknown filter column.")
                 like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
                 where = " WHERE (" + " OR ".join(
                     f"CAST({qi(t)} AS TEXT) LIKE ? ESCAPE '\\'" for t in targets) + ")"
@@ -290,7 +292,7 @@ def read_rows(path: str, table: str, page: int = 1, size: int = 50, sort: str | 
             order = ""
             if sort:
                 if sort not in names and sort not in key_cols:
-                    raise DBError("Columna de orden desconocida.")
+                    raise DBError("Unknown sort column.")
                 direction = "DESC" if desc else "ASC"
                 order = f" ORDER BY {qi(sort)} {direction}"
                 tie = [k for k in key_cols if k != sort]
@@ -305,41 +307,41 @@ def read_rows(path: str, table: str, page: int = 1, size: int = 50, sort: str | 
                 total = conn.execute(f"SELECT count(*) FROM {qi(table)}{where}",
                                      params).fetchone()[0]
             except sqlite3.OperationalError:
-                total = None  # tabla enorme: se cancela el conteo, la página sí se sirve
+                total = None  # huge table: the count is cancelled, the page is still served
             return {"table": meta, "rows": out, "page": page, "size": size, "total": total}
     return _run(work)
 
 
-# --------------------------------------------------------------------------- escritura
+# --------------------------------------------------------------------------- writing
 
 def _writable_meta(conn, table: str) -> dict:
     meta = _table_meta(conn, table)
     if not meta["editable"]:
-        raise DBError(f"La tabla no se puede editar: {meta['readonly_reason']}", 403)
+        raise DBError("Table cannot be edited: {reason}", 403, reason=meta["readonly_reason"])
     return meta
 
 
 def _key_where(meta: dict, key: list) -> tuple[str, list]:
     cols = meta["key"]["columns"]
     if not isinstance(key, list) or len(key) != len(cols):
-        raise DBError("Clave de fila no válida.")
-    # IS en lugar de = : en tablas con rowid una PK puede contener NULL
+        raise DBError("Invalid row key.")
+    # IS instead of = : in rowid tables a PK can contain NULL
     return " AND ".join(f"{qi(c)} IS ?" for c in cols), [decode_value(v) for v in key]
 
 
 def _check_columns(meta: dict, values: dict) -> list[str]:
     names = {c["name"] for c in meta["columns"]}
     if not isinstance(values, dict):
-        raise DBError("Valores no válidos.")
+        raise DBError("Invalid values.")
     unknown = [k for k in values if k not in names]
     if unknown:
-        raise DBError(f"Columnas desconocidas: {', '.join(unknown)}")
+        raise DBError("Unknown columns: {columns}", columns=", ".join(unknown))
     return list(values)
 
 
 def _write(path: str, fn):
     if config.READ_ONLY:
-        raise DBError("El visor está en modo solo lectura.", 403)
+        raise DBError("The viewer is in read-only mode.", 403)
 
     def work():
         with connect(path, write=True) as conn:
@@ -361,8 +363,9 @@ def update_row(path: str, table: str, key: list, values: dict) -> dict:
         cur = conn.execute(f"UPDATE {qi(table)} SET {sets} WHERE {where}",
                            [decode_value(values[c]) for c in cols] + wparams)
         if cur.rowcount != 1:
-            raise DBError(f"La edición afectaría a {cur.rowcount} filas; se cancela. "
-                          "¿La fila cambió o se borró mientras tanto?", 409)
+            raise DBError("The edit would affect {count} rows; cancelled. "
+                          "Did the row change or get deleted in the meantime?", 409,
+                          count=cur.rowcount)
         return {"changes": 1}
     return _write(path, fn)
 
@@ -388,7 +391,7 @@ def delete_row(path: str, table: str, key: list) -> dict:
         where, params = _key_where(meta, key)
         cur = conn.execute(f"DELETE FROM {qi(table)} WHERE {where}", params)
         if cur.rowcount != 1:
-            raise DBError(f"El borrado afectaría a {cur.rowcount} filas; se cancela.", 409)
+            raise DBError("The delete would affect {count} rows; cancelled.", 409, count=cur.rowcount)
         return {"changes": 1}
     return _write(path, fn)
 
@@ -405,7 +408,7 @@ def _backup_dir(path: str) -> str:
 
 
 def make_backup(path: str) -> dict:
-    """Copia consistente con la API de backup de SQLite (incluye lo que hay en el -wal)."""
+    """Consistent copy via the SQLite backup API (includes what is in the -wal)."""
     folder = _backup_dir(path)
     os.makedirs(folder, exist_ok=True)
     base, ext = os.path.splitext(os.path.basename(path))
@@ -413,7 +416,7 @@ def make_backup(path: str) -> dict:
 
     def work():
         with connect(path) as src:
-            src.set_progress_handler(None, 0)  # una copia grande no debe cortarse
+            src.set_progress_handler(None, 0)  # a large copy must not be cut off
             dst = sqlite3.connect(dest)
             try:
                 src.backup(dst)
@@ -463,7 +466,7 @@ def list_backups(path: str) -> list[dict]:
     return out
 
 
-# --------------------------------------------------------------------------- consola SQL
+# --------------------------------------------------------------------------- SQL console
 
 _A = sqlite3
 DDL_ACTIONS = {
@@ -476,7 +479,7 @@ DDL_ACTIONS = {
 }
 WRITE_ACTIONS = {_A.SQLITE_INSERT, _A.SQLITE_UPDATE, _A.SQLITE_DELETE}
 ALWAYS_DENY = {_A.SQLITE_ATTACH, _A.SQLITE_DETACH, _A.SQLITE_TRANSACTION, _A.SQLITE_SAVEPOINT}
-# PRAGMAs de solo consulta que aceptan argumento (nombre de tabla/índice)
+# read-only PRAGMAs that accept an argument (table/index name)
 PRAGMA_WITH_ARG = {"table_info", "table_xinfo", "index_list", "index_info", "index_xinfo",
                    "foreign_key_list", "foreign_key_check", "integrity_check", "quick_check"}
 PRAGMA_DENY = {"journal_mode", "writable_schema", "wal_checkpoint", "optimize",
@@ -489,10 +492,10 @@ def _strip_comments(sql: str) -> str:
 
 
 class _Guard:
-    """Authorizer de SQLite: decide qué puede hacer una sentencia de la consola.
+    """SQLite authorizer: decides what a console statement may do.
 
-    En modo sondeo (``probe``) solo anota si la sentencia escribe o cambia la estructura;
-    se ejecuta sobre una conexión ``mode=ro``, así que nada llega al archivo.
+    In probe mode (``probe``) it only records whether the statement writes or changes the
+    structure; it runs on a ``mode=ro`` connection, so nothing reaches the file.
     """
 
     def __init__(self, probe: bool, allow_ddl: bool = False):
@@ -509,35 +512,35 @@ class _Guard:
 
     def __call__(self, action, arg1, arg2, dbname, source):
         if action in ALWAYS_DENY:
-            return self._deny("Transacciones, ATTACH y SAVEPOINT no están permitidos.")
+            return self._deny("Transactions, ATTACH and SAVEPOINT are not allowed.")
         if action == sqlite3.SQLITE_PRAGMA:
             name = (arg1 or "").lower()
             if name in PRAGMA_DENY or (arg2 is not None and name not in PRAGMA_WITH_ARG):
-                return self._deny(f"PRAGMA {name} no está permitido aquí.")
+                return self._deny("This PRAGMA is not allowed here.")
             return sqlite3.SQLITE_OK
         if action in DDL_ACTIONS:
             self.wants_ddl = True
             if not self.probe and not self.allow_ddl:
-                return self._deny("Cambiar la estructura de la base de datos está bloqueado.")
+                return self._deny("Changing the database structure is blocked.")
         elif action in WRITE_ACTIONS:
             self.wants_write = True
-            # las sentencias DDL escriben en sqlite_master; el resto no puede tocarla
+            # DDL statements write to sqlite_master; nothing else may touch it
             name = (arg1 or "").lower()
             if name.startswith("sqlite_") and name != "sqlite_sequence":
                 self.internal = True
                 if not self.probe and not self.allow_ddl:
-                    return self._deny("No se pueden modificar las tablas internas de SQLite.")
+                    return self._deny("Internal SQLite tables cannot be modified.")
         return sqlite3.SQLITE_OK
 
 
 def run_sql(path: str, sql: str, params: list | None = None, confirm: bool = False) -> dict:
     if not config.ENABLE_SQL_CONSOLE:
-        raise DBError("La consola SQL está desactivada.", 403)
+        raise DBError("The SQL console is disabled.", 403)
     sql = (sql or "").strip()
     if not sql:
-        raise DBError("Escribe una sentencia SQL.")
+        raise DBError("Enter an SQL statement.")
     if re.match(r"\s*VACUUM\b", _strip_comments(sql), re.I):
-        raise DBError("VACUUM no está permitido.", 403)
+        raise DBError("VACUUM is not allowed.", 403)
     params = [decode_value(p) for p in (params or [])]
 
     def execute(conn, guard):
@@ -576,13 +579,13 @@ def run_sql(path: str, sql: str, params: list | None = None, confirm: bool = Fal
     if result is not None:
         return {**result, "wrote": False}
     if guard.internal and not guard.wants_ddl:
-        raise DBError("No se pueden modificar las tablas internas de SQLite.", 403)
+        raise DBError("Internal SQLite tables cannot be modified.", 403)
     if guard.wants_ddl and schema_locked(alembic):
-        reason = (" (la base de datos usa migraciones de Alembic)" if alembic
-                  else " (activa ALLOW_SCHEMA_CHANGES para permitirlo)")
-        raise DBError("Cambiar la estructura está bloqueado" + reason + ".", 403)
+        if alembic:
+            raise DBError("Changing the schema is blocked (the database uses Alembic migrations).", 403)
+        raise DBError("Changing the schema is blocked (enable ALLOW_SCHEMA_CHANGES to allow it).", 403)
     if config.READ_ONLY:
-        raise DBError("El visor está en modo solo lectura.", 403)
+        raise DBError("The viewer is in read-only mode.", 403)
     if not confirm:
         return {"needs_confirm": True, "ddl": guard.wants_ddl}
 

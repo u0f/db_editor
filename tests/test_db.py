@@ -23,7 +23,7 @@ def dbfile(tmp_path, monkeypatch):
                    "('ana', '{\"x\": 1}', 1700000000.5, 1234567890123456789)")
     writer.execute("INSERT INTO pairs VALUES ('k', 1, 'uno'), ('k', 2, 'dos')")
     writer.execute("INSERT INTO logs VALUES ('hola'), ('hola')")
-    # el "bot" mantiene la conexión abierta: los datos siguen en el -wal
+    # the "bot" keeps its connection open: the data stays in the -wal
     yield path, writer
     writer.close()
 
@@ -85,7 +85,7 @@ def test_busy_writer_times_out_cleanly(dbfile, monkeypatch):
         writer.execute("ROLLBACK")
 
 
-@pytest.mark.skipif(os.geteuid() != 0, reason="necesita root para chown")
+@pytest.mark.skipif(os.geteuid() != 0, reason="needs root for chown")
 def test_ownership_preserved(dbfile):
     path, writer = dbfile
     writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -165,5 +165,5 @@ def test_host_root_translation(tmp_path, monkeypatch):
     assert c["databases"][0]["container_path"] == "/data/app.db"
     entry = dbs[c["databases"][0]["id"]]
     assert entry["fs_path"] == str(data / "app.db")
-    # solo se avisa de la carpeta inexistente, no de archivos sueltos
+    # only the missing folder is flagged, not loose files
     assert [m["source"] for m in c["mounts"] if not m["accessible"]] == ["/home/user/projects/other/data"]

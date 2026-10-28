@@ -1,4 +1,4 @@
-"""Cliente mínimo de la API de Docker por socket Unix (sin dependencias)."""
+"""Minimal Docker API client over a Unix socket (no dependencies)."""
 import http.client
 import json
 import socket
@@ -29,14 +29,14 @@ def _get(path: str):
         resp = conn.getresponse()
         body = resp.read()
     except OSError as exc:
-        raise DockerError(f"No se puede hablar con Docker en {config.DOCKER_SOCKET}: {exc}") from exc
+        raise DockerError(f"Cannot talk to Docker at {config.DOCKER_SOCKET}: {exc}") from exc
     finally:
         conn.close()
     if resp.status != 200:
-        raise DockerError(f"Docker respondió {resp.status}: {body[:200]!r}")
+        raise DockerError(f"Docker responded {resp.status}: {body[:200]!r}")
     return json.loads(body)
 
 
 def running_containers() -> list[dict]:
-    """Contenedores en ejecución (incluye Mounts[] con Source/Destination)."""
+    """Running containers (includes Mounts[] with Source/Destination)."""
     return _get("/containers/json")

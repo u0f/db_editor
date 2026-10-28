@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,9 +12,10 @@
   <form id="login-form" class="card">
     <img src="/favicon.ico" alt="" width="48" height="48">
     <h1>DB Editor</h1>
-    <input id="login-password" type="password" placeholder="Contraseña" autocomplete="current-password" autofocus>
-    <button type="submit" class="primary">Entrar</button>
+    <input id="login-password" type="password" placeholder="Password" data-i18n-placeholder="Password" autocomplete="current-password" autofocus>
+    <button type="submit" class="primary" data-i18n="Sign in">Sign in</button>
     <p id="login-error" class="error"></p>
+    <select class="lang-select" aria-label="Language"></select>
   </form>
 </div>
 
@@ -23,13 +24,15 @@
     <div class="brand"><img src="/favicon.ico" alt="" width="22" height="22"> DB Editor</div>
     <div id="crumbs" class="crumbs"></div>
     <div class="spacer"></div>
-    <span id="ro-badge" class="badge warn hidden">Solo lectura</span>
-    <button id="btn-refresh" title="Volver a buscar contenedores">⟳ Buscar</button>
-    <button id="btn-logout">Salir</button>
+    <span id="ro-badge" class="badge warn hidden" data-i18n="Read-only">Read-only</span>
+    <button id="update-badge" class="primary hidden" data-i18n="Update available">Update available</button>
+    <select class="lang-select" aria-label="Language"></select>
+    <button id="btn-refresh" title="Scan containers again" data-i18n-title="Scan containers again" data-i18n="⟳ Scan">⟳ Scan</button>
+    <button id="btn-logout" data-i18n="Sign out">Sign out</button>
   </header>
-  <aside id="sidebar"><div class="muted pad">Cargando…</div></aside>
+  <aside id="sidebar"><div class="muted pad" data-i18n="Loading…">Loading…</div></aside>
   <main id="main">
-    <div class="empty">Elige una base de datos en el panel izquierdo.</div>
+    <div class="empty" data-i18n="Choose a database in the left panel.">Choose a database in the left panel.</div>
   </main>
 </div>
 

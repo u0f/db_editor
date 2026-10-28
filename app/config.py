@@ -1,4 +1,4 @@
-"""Configuración leída de variables de entorno."""
+"""Configuration read from environment variables."""
 import os
 
 
@@ -20,33 +20,37 @@ PASSWORD = os.environ.get("DB_EDITOR_PASSWORD", "")
 PORT = _int("DB_EDITOR_PORT", 8790)
 
 DOCKER_SOCKET = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
-# Raíz del host montada dentro del visor (- /:/host). Si existe, todas las rutas de los
-# montajes se leen a través de ella y no hace falta montar cada carpeta por separado.
+# Host root mounted inside the viewer (- /:/host). If present, all mount paths are
+# read through it, so there is no need to mount each folder separately.
 HOST_ROOT = os.environ.get("HOST_ROOT", "/host")
 
-# Descubrimiento
+# Discovery
 SCAN_MAX_DEPTH = _int("SCAN_MAX_DEPTH", 4)
-SCAN_MAX_ENTRIES = _int("SCAN_MAX_ENTRIES", 20000)  # por montaje
-DISCOVERY_TTL = _int("DISCOVERY_TTL", 60)  # segundos de caché en memoria
+SCAN_MAX_ENTRIES = _int("SCAN_MAX_ENTRIES", 20000)  # per mount
+DISCOVERY_TTL = _int("DISCOVERY_TTL", 60)  # seconds of in-memory cache
 EXCLUDE_CONTAINERS = {
     c.strip() for c in os.environ.get("EXCLUDE_CONTAINERS", "").split(",") if c.strip()
 }
 
 # SQLite
 BUSY_TIMEOUT_MS = _int("BUSY_TIMEOUT_MS", 10000)
-READ_DEADLINE_S = _int("READ_DEADLINE_S", 20)  # aborta lecturas demasiado largas
+READ_DEADLINE_S = _int("READ_DEADLINE_S", 20)  # abort reads that take too long
 WRITE_DEADLINE_S = _int("WRITE_DEADLINE_S", 10)
 MAX_PAGE_SIZE = 500
 MAX_CONSOLE_ROWS = _int("MAX_CONSOLE_ROWS", 1000)
 
-# Escritura
+# Writing
 READ_ONLY = _bool("READ_ONLY", False)
 ALLOW_SCHEMA_CHANGES = _bool("ALLOW_SCHEMA_CHANGES", False)
 ENABLE_SQL_CONSOLE = _bool("ENABLE_SQL_CONSOLE", True)
 
-# Copias de seguridad
+# Backups
 BACKUP_DIR = os.environ.get("BACKUP_DIR", "/backups")
-BACKUP_KEEP = _int("BACKUP_KEEP", 5)  # copias que se conservan por base de datos
+BACKUP_KEEP = _int("BACKUP_KEEP", 5)  # copies kept per database
 
-# Sesión
+# Session
 SESSION_HOURS = _int("SESSION_HOURS", 12)
+
+# Updates: only checks GitHub and tells the user, it never updates anything
+UPDATE_CHECK = _bool("UPDATE_CHECK", True)
+UPDATE_REPO = os.environ.get("UPDATE_REPO", "u0f/db_editor")

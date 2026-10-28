@@ -1,4 +1,4 @@
-"""Servidor web (Starlette). Arranque: python -m app.main"""
+"""Web server (Starlette). Run with: python -m app.main"""
 import asyncio
 import os
 import sys
@@ -12,7 +12,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import auth, config, db
+from . import auth, config, db, updates
 from . import discovery
 from .discovery import registry
 
@@ -26,21 +26,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC or path.startswith("/static/"):
             return await call_next(request)
         if not auth.valid_token(request.cookies.get(auth.COOKIE)):
-            return JSONResponse({"error": "No autenticado"}, status_code=401)
-        # Protección CSRF: una cabecera propia no se puede enviar desde otro origen sin CORS
+            return JSONResponse({"error": "Not authenticated"}, status_code=401)
+        # CSRF protection: a custom header cannot be sent from another origin without CORS
         if request.method != "GET" and request.headers.get("x-dbe") != "1":
-            return JSONResponse({"error": "Petición rechazada"}, status_code=403)
+            return JSONResponse({"error": "Request rejected"}, status_code=403)
         return await call_next(request)
 
 
 def _err(exc: db.DBError) -> JSONResponse:
-    return JSONResponse({"error": str(exc)}, status_code=exc.status)
+    return JSONResponse({"error": str(exc), "key": exc.key, "params": exc.params},
+                        status_code=exc.status)
 
 
 def _db_path(request: Request) -> str:
     entry = registry.get(request.path_params["db_id"])
     if entry is None:
-        raise db.DBError("Base de datos no encontrada.", 404)
+        raise db.DBError("Database not found.", 404)
     return entry["fs_path"]
 
 
@@ -48,9 +49,9 @@ async def _body(request: Request) -> dict:
     try:
         data = await request.json()
     except ValueError:
-        raise db.DBError("JSON no válido.")
+        raise db.DBError("Invalid JSON.")
     if not isinstance(data, dict):
-        raise db.DBError("JSON no válido.")
+        raise db.DBError("Invalid JSON.")
     return data
 
 
@@ -63,7 +64,7 @@ def handler(fn):
     return endpoint
 
 
-# --------------------------------------------------------------------------- rutas
+# --------------------------------------------------------------------------- routes
 
 async def index(request):
     return FileResponse(os.path.join(STATIC, "index.html"))
@@ -80,14 +81,14 @@ async def healthz(request):
 async def login(request: Request):
     ip = request.client.host if request.client else "?"
     if auth.locked_out(ip):
-        return JSONResponse({"error": "Demasiados intentos. Espera unos minutos."}, 429)
+        return JSONResponse({"error": "Too many attempts. Wait a few minutes."}, 429)
     try:
         password = str((await request.json()).get("password", ""))
     except (ValueError, AttributeError):
         password = ""
     if not auth.check_password(ip, password):
         await asyncio.sleep(1)
-        return JSONResponse({"error": "Contraseña incorrecta"}, status_code=401)
+        return JSONResponse({"error": "Wrong password"}, status_code=401)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(auth.COOKIE, auth.make_token(), max_age=config.SESSION_HOURS * 3600,
                     httponly=True, samesite="strict")
@@ -106,6 +107,11 @@ async def session(request):
         "read_only": config.READ_ONLY, "sql_console": config.ENABLE_SQL_CONSOLE,
         "allow_schema_changes": config.ALLOW_SCHEMA_CHANGES,
     })
+
+
+@handler
+async def version(request: Request):
+    return await run_in_threadpool(updates.status)
 
 
 @handler
@@ -133,11 +139,11 @@ async def rows(request: Request):
     qp = request.query_params
     table = qp.get("table")
     if not table:
-        raise db.DBError("Falta la tabla.")
+        raise db.DBError("Missing table.")
     try:
         page, size = int(qp.get("page", 1)), int(qp.get("size", 50))
     except ValueError:
-        raise db.DBError("Paginación no válida.")
+        raise db.DBError("Invalid pagination.")
     return await run_in_threadpool(db.read_rows, path, table, page, size, qp.get("sort") or None,
                                    qp.get("desc") == "1", qp.get("q") or None,
                                    qp.get("col") or None)
@@ -184,6 +190,7 @@ routes = [
     Route("/api/login", login, methods=["POST"]),
     Route("/api/logout", logout, methods=["POST"]),
     Route("/api/session", session),
+    Route("/api/version", version),
     Route("/api/containers", containers),
     Route("/api/db/{db_id}", schema),
     Route("/api/db/{db_id}/rows", rows),
@@ -202,8 +209,8 @@ def main() -> None:
     import uvicorn
 
     if not config.PASSWORD:
-        print("ERROR: define DB_EDITOR_PASSWORD; la interfaz tiene acceso de escritura "
-              "a todas las bases de datos.", file=sys.stderr)
+        print("ERROR: set DB_EDITOR_PASSWORD; the UI has write access "
+              "to every database.", file=sys.stderr)
         sys.exit(1)
     uvicorn.run(app, host="0.0.0.0", port=config.PORT, access_log=False, log_level="warning",
                 server_header=False, proxy_headers=False)

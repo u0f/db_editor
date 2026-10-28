@@ -1,94 +1,118 @@
 # DB Editor
 
-Visor/editor web de las bases de datos **SQLite** de los contenedores Docker en marcha,
-ligero, para cualquier host con Docker (también Raspberry Pi y CasaOS).
+**English** · [Español](README.es.md)
 
-- Descubre los contenedores en ejecución por `/var/run/docker.sock` y recorre sus `Mounts[]`.
-- Encuentra `*.db`, `*.sqlite` y `*.sqlite3` y valida la cabecera `SQLite format 3\0`.
-- Es genérico: lee el esquema en tiempo de ejecución (`sqlite_master`, `PRAGMA table_info`,
-  `index_list`, `foreign_key_list`).
-- Tablas paginadas, orden por columna, filtro de texto, formato legible de JSON, fechas ISO y epoch.
-- Edición, inserción y borrado de filas, identificadas por clave primaria (simple o compuesta)
-  o por `rowid`.
-- Copia de seguridad con la API de backup de SQLite antes de escribir (se ofrece una vez por base
-  de datos y sesión, y hay un botón para hacerla cuando quieras).
-- Consola SQL opcional: una sentencia por ejecución y confirmación para las que escriben.
+Web viewer/editor for the **SQLite** databases of your running Docker containers. Lightweight
+enough for any Docker host, including a Raspberry Pi or CasaOS.
 
-## Despliegue
+- Discovers running containers through `/var/run/docker.sock` and walks their `Mounts[]`.
+- Finds `*.db`, `*.sqlite` and `*.sqlite3` files and checks the `SQLite format 3\0` header.
+- Generic: the schema is read at runtime (`sqlite_master`, `PRAGMA table_info`, `index_list`,
+  `foreign_key_list`).
+- Paginated tables, column sorting, text filter, readable JSON, ISO and epoch dates.
+- Edit, insert and delete rows, identified by primary key (single or composite) or by `rowid`.
+- Backups through the SQLite backup API before writing (offered once per database and session,
+  plus a button to make one whenever you want).
+- Optional SQL console: one statement per run, with confirmation for statements that write.
+- UI in English, Spanish, Chinese, French, German and Portuguese (picked from the browser,
+  switchable from the header).
 
-1. Clona el repo en el host y crea el archivo `.env` con la contraseña (**obligatoria**):
+## Deployment
+
+1. Clone the repo on the host and create the `.env` file with the password (**required**):
    ```sh
    git clone https://github.com/u0f/db_editor.git && cd db_editor
    cp .env.example .env
-   nano .env        # DB_EDITOR_PASSWORD=tu-contraseña
+   nano .env        # DB_EDITOR_PASSWORD=your-password
    chmod 600 .env
    ```
-   `.env` está en `.gitignore`, así que la contraseña nunca se sube al repo. Sin ella,
-   `docker compose` se niega a arrancar.
-   - No hace falta listar las carpetas de tus proyectos: el compose monta la raíz del host en
-     `/host` (`- /:/host:rslave`) y el visor traduce solo las rutas de cada montaje
-     (`/home/user/projects/x/data` → `/host/home/user/projects/x/data`), incluidos los
-     volúmenes con nombre de `/var/lib/docker/volumes`.
+   `.env` is in `.gitignore`, so the password never ends up in the repo. Without it,
+   `docker compose` refuses to start.
+   - You don't need to list your project folders: the compose file mounts the host root at
+     `/host` (`- /:/host:rslave`) and the viewer translates every mount path on its own
+     (`/home/user/projects/x/data` → `/host/home/user/projects/x/data`), including named
+     volumes under `/var/lib/docker/volumes`.
 2. `docker compose up -d --build`
-3. Abre `http://<ip-del-host>:8790` (o el icono en CasaOS, gracias al bloque `x-casaos`).
-   Las copias de seguridad se guardan en `./backups`, junto al compose.
+3. Open `http://<host-ip>:8790` (or the CasaOS icon, thanks to the `x-casaos` block).
+   Backups are stored in `./backups`, next to the compose file.
 
-Puerto: **8790**.
+Port: **8790**.
 
-Los contenedores sin bases de datos se agrupan al final, en «Sin bases de datos». Los montajes
-que no pueden contener una base de datos (archivos sueltos como cookies, configuración o
-`/etc/localtime`) no se tienen en cuenta. Si una carpeta montada no se ve desde el visor, aparece
-con ⚠.
+Containers without databases are grouped at the end, under "No databases". Mounts that cannot
+hold a database (single files such as cookies, configuration or `/etc/localtime`) are ignored.
+If a mounted folder is not visible to the viewer, it is shown with ⚠.
 
-Para construir la imagen para ambas arquitecturas desde otro equipo:
+To build the image for both architectures from another machine:
 
 ```sh
 docker buildx build --platform linux/arm64,linux/amd64 -t db-editor:latest .
 ```
 
-### Variables de entorno
+### Environment variables
 
-| Variable | Defecto | Descripción |
+| Variable | Default | Description |
 |---|---|---|
-| `DB_EDITOR_PASSWORD` | — | Contraseña de la interfaz (obligatoria). |
-| `TZ` | `UTC` | Zona horaria (en `.env`). |
-| `DB_EDITOR_PORT` | `8790` | Puerto interno. |
-| `READ_ONLY` | `false` | Desactiva cualquier escritura. |
-| `ALLOW_SCHEMA_CHANGES` | `false` | Permite DDL (CREATE/DROP/ALTER) en la consola. Nunca en bases de datos con `alembic_version`. |
-| `ENABLE_SQL_CONSOLE` | `true` | Muestra la consola SQL. |
-| `BACKUP_DIR` | `/backups` | Dónde se guardan las copias. |
-| `BACKUP_KEEP` | `5` | Copias que se conservan por base de datos. |
-| `BUSY_TIMEOUT_MS` | `10000` | `PRAGMA busy_timeout` al escribir mientras otra aplicación escribe. |
-| `HOST_ROOT` | `/host` | Dónde está montada la raíz del host. Si no existe, se usan las rutas tal cual (montándolas en la misma ruta). |
-| `EXCLUDE_CONTAINERS` | — | Nombres separados por comas que no se escanean. |
-| `SCAN_MAX_DEPTH` | `4` | Profundidad máxima al recorrer cada montaje. |
-| `SESSION_HOURS` | `12` | Duración de la sesión. |
+| `DB_EDITOR_PASSWORD` | — | UI password (required). |
+| `TZ` | `UTC` | Time zone (in `.env`). |
+| `DB_EDITOR_PORT` | `8790` | Internal port. |
+| `READ_ONLY` | `false` | Disables every write. |
+| `ALLOW_SCHEMA_CHANGES` | `false` | Allows DDL (CREATE/DROP/ALTER) in the console. Never on databases with `alembic_version`. |
+| `ENABLE_SQL_CONSOLE` | `true` | Shows the SQL console. |
+| `BACKUP_DIR` | `/backups` | Where backups are stored. |
+| `BACKUP_KEEP` | `5` | Backups kept per database. |
+| `BUSY_TIMEOUT_MS` | `10000` | `PRAGMA busy_timeout` when writing while another application writes. |
+| `HOST_ROOT` | `/host` | Where the host root is mounted. If it does not exist, paths are used as-is (mount them at the same path). |
+| `EXCLUDE_CONTAINERS` | — | Comma-separated container names that are not scanned. |
+| `SCAN_MAX_DEPTH` | `4` | Maximum depth when walking each mount. |
+| `SESSION_HOURS` | `12` | Session length. |
+| `UPDATE_CHECK` | `true` | Checks GitHub for a newer version (every 6 h) and shows a notice. It never updates anything. |
+| `UPDATE_REPO` | `u0f/db_editor` | GitHub repository to check (change it if you use a fork). |
 
-## Cómo trata las bases de datos
+## How databases are handled
 
-- **Lectura**: `file:<ruta>?mode=ro` sin `immutable=1`, así que se ven los datos que siguen en el `-wal`.
-- **Escritura**: `PRAGMA busy_timeout` alto, `BEGIN IMMEDIATE` → una sentencia parametrizada →
-  `COMMIT`. Si una edición o borrado no afecta exactamente a una fila, se deshace.
-- Nunca hace `VACUUM` ni cambia `journal_mode` (también bloqueado en la consola, igual que
-  `ATTACH`, transacciones manuales y `PRAGMA` que modifican).
-- **Estructura**: bloqueada por defecto; en bases de datos con `alembic_version` siempre.
-  La tabla `alembic_version`, las internas `sqlite_*`, las vistas y las tablas virtuales son de
-  solo lectura.
-- **Permisos**: el proceso es root dentro del contenedor (con solo `CHOWN`, `DAC_OVERRIDE` y
-  `FOWNER`), así que puede escribir en archivos de cualquier uid sin tocar su dueño ni sus
-  permisos. SQLite ya asigna al `-wal`/`-shm` que crea el uid/gid de la base de datos, y además
-  el visor lo comprueba y corrige tras cada escritura. Las copias también se crean con el
-  uid/gid del original.
-- **Disco** (pensado también para tarjetas microSD): sin caché en disco ni logs de acceso; el
-  descubrimiento se cachea en memoria
-  (60 s), el sistema de archivos del contenedor es de solo lectura y solo se escribe en disco
-  al editar o al hacer una copia.
+- **Reads**: `file:<path>?mode=ro` without `immutable=1`, so data still in the `-wal` is visible.
+- **Writes**: high `PRAGMA busy_timeout`, `BEGIN IMMEDIATE` → one parameterized statement →
+  `COMMIT`. If an edit or delete does not affect exactly one row, it is rolled back.
+- Never runs `VACUUM` nor changes `journal_mode` (also blocked in the console, like `ATTACH`,
+  manual transactions and `PRAGMA`s that modify).
+- **Schema**: locked by default, and always on databases with `alembic_version`. The
+  `alembic_version` table, the internal `sqlite_*` tables, views and virtual tables are
+  read-only.
+- **Permissions**: the process is root inside the container (with only `CHOWN`, `DAC_OVERRIDE`
+  and `FOWNER`), so it can write files owned by any uid without changing their owner or mode.
+  SQLite already gives the `-wal`/`-shm` files it creates the database's uid/gid, and the viewer
+  also checks and fixes that after every write. Backups are created with the original's uid/gid
+  too.
+- **Disk** (also designed for microSD cards): no disk cache and no access logs; discovery is
+  cached in memory (60 s), the container filesystem is read-only and the disk is only written
+  when editing or making a backup.
 
-## Desarrollo
+## Updating
+
+When a newer version is published on GitHub, an "Update available" button appears in the
+header. The viewer never updates itself; to update, run this where you cloned the repo:
+
+```sh
+git pull
+docker compose up -d --build
+```
+
+The check reads [`app/VERSION`](app/VERSION) from GitHub at most every 6 hours and can be turned
+off with `UPDATE_CHECK=false`. To publish a new version, bump `app/VERSION` and push.
+
+## Translations
+
+UI strings are written in English in the code and that English text is also the translation
+key. Translations live in [`app/static/i18n/<lang>.json`](app/static/i18n) as flat
+`{"English text": "translation"}` objects; missing keys fall back to English. To add a
+language, copy one of those files, translate the values (keep `{placeholders}` as they are)
+and add the language code to `LANGS` in [`app/static/app.js`](app/static/app.js).
+
+## Development
 
 ```sh
 pip install -r requirements.txt pytest
 python -m pytest -q
-python -m app.discovery          # lista contenedores y bases de datos encontradas
+python -m app.discovery          # lists containers and the databases found
 DB_EDITOR_PASSWORD=x python -m app.main
 ```
