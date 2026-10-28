@@ -18,6 +18,7 @@ ligero, para cualquier host con Docker (también Raspberry Pi y CasaOS).
 
 1. Clona el repo en el host y crea el archivo `.env` con la contraseña (**obligatoria**):
    ```sh
+   git clone https://github.com/u0f/db_editor.git && cd db_editor
    cp .env.example .env
    nano .env        # DB_EDITOR_PASSWORD=tu-contraseña
    chmod 600 .env
@@ -29,7 +30,8 @@ ligero, para cualquier host con Docker (también Raspberry Pi y CasaOS).
      (`/home/user/projects/x/data` → `/host/home/user/projects/x/data`), incluidos los
      volúmenes con nombre de `/var/lib/docker/volumes`.
 2. `docker compose up -d --build`
-3. Abre `http://<ip-del-host>:8790` o el icono en CasaOS (bloque `x-casaos`).
+3. Abre `http://<ip-del-host>:8790` (o el icono en CasaOS, gracias al bloque `x-casaos`).
+   Las copias de seguridad se guardan en `./backups`, junto al compose.
 
 Puerto: **8790**.
 
@@ -49,13 +51,14 @@ docker buildx build --platform linux/arm64,linux/amd64 -t db-editor:latest .
 | Variable | Defecto | Descripción |
 |---|---|---|
 | `DB_EDITOR_PASSWORD` | — | Contraseña de la interfaz (obligatoria). |
+| `TZ` | `UTC` | Zona horaria (en `.env`). |
 | `DB_EDITOR_PORT` | `8790` | Puerto interno. |
 | `READ_ONLY` | `false` | Desactiva cualquier escritura. |
 | `ALLOW_SCHEMA_CHANGES` | `false` | Permite DDL (CREATE/DROP/ALTER) en la consola. Nunca en bases de datos con `alembic_version`. |
 | `ENABLE_SQL_CONSOLE` | `true` | Muestra la consola SQL. |
 | `BACKUP_DIR` | `/backups` | Dónde se guardan las copias. |
 | `BACKUP_KEEP` | `5` | Copias que se conservan por base de datos. |
-| `BUSY_TIMEOUT_MS` | `10000` | `PRAGMA busy_timeout` al escribir mientras el bot escribe. |
+| `BUSY_TIMEOUT_MS` | `10000` | `PRAGMA busy_timeout` al escribir mientras otra aplicación escribe. |
 | `HOST_ROOT` | `/host` | Dónde está montada la raíz del host. Si no existe, se usan las rutas tal cual (montándolas en la misma ruta). |
 | `EXCLUDE_CONTAINERS` | — | Nombres separados por comas que no se escanean. |
 | `SCAN_MAX_DEPTH` | `4` | Profundidad máxima al recorrer cada montaje. |
@@ -76,7 +79,8 @@ docker buildx build --platform linux/arm64,linux/amd64 -t db-editor:latest .
   permisos. SQLite ya asigna al `-wal`/`-shm` que crea el uid/gid de la base de datos, y además
   el visor lo comprueba y corrige tras cada escritura. Las copias también se crean con el
   uid/gid del original.
-- **microSD**: sin caché en disco ni logs de acceso; el descubrimiento se cachea en memoria
+- **Disco** (pensado también para tarjetas microSD): sin caché en disco ni logs de acceso; el
+  descubrimiento se cachea en memoria
   (60 s), el sistema de archivos del contenedor es de solo lectura y solo se escribe en disco
   al editar o al hacer una copia.
 

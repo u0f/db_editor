@@ -4,7 +4,7 @@ Reglas que se cumplen siempre:
   * nunca se abre con immutable=1 (se perderían los datos que aún están en el -wal);
   * lecturas con ``file:<ruta>?mode=ro``;
   * escrituras en transacciones cortas (BEGIN IMMEDIATE ... COMMIT) y parametrizadas;
-  * busy_timeout alto, porque el bot puede tener el único hueco de escritor de WAL;
+  * busy_timeout alto, porque otra aplicación puede tener el único hueco de escritor de WAL;
   * jamás VACUUM ni cambios de journal_mode;
   * tras escribir, -wal/-shm conservan el uid/gid del archivo principal.
 """
@@ -106,7 +106,7 @@ def _run(fn):
         if "interrupted" in msg:
             raise DBError("La consulta tardó demasiado y se canceló.", 408) from exc
         if "locked" in msg or "busy" in msg:
-            raise DBError("La base de datos está ocupada (el bot está escribiendo). "
+            raise DBError("La base de datos está ocupada (otra aplicación está escribiendo). "
                           "Inténtalo de nuevo.", 409) from exc
         raise DBError(msg) from exc
     except sqlite3.Error as exc:
