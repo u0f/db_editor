@@ -116,3 +116,7 @@ python -m pytest -q
 python -m app.discovery          # lists containers and the databases found
 DB_EDITOR_PASSWORD=x python -m app.main
 ```
+
+## License
+
+[MIT](LICENSE)
